@@ -11,7 +11,7 @@ if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
 
 $key = $env:OPENROUTER_API_KEY
 if (-not $key) {
-    $envFile = Join-Path (Join-Path (Join-Path $PSScriptRoot "..") "..") ".env"
+    $envFile = Join-Path $PSScriptRoot ".env"
     if (Test-Path $envFile) {
         $content = Get-Content $envFile -Raw
         if ($content -match 'OPENROUTER_API_KEY\s*=\s*(.+)') {

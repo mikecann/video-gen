@@ -1,9 +1,10 @@
 {
   "name": "video-gen",
   "version": "1.0.0",
+  "license": "MIT",
   "private": true,
   "dependencies": {
-    "electrobun": "latest",
+    "electrobun": "2.0.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
@@ -16,7 +17,7 @@
   "scripts": {
     "start": "bun run build:dev && electrobun dev",
     "dev": "electrobun dev",
-    "build:dev": "bun install && electrobun build",
+    "build:dev": "bun install --frozen-lockfile && electrobun build",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   }

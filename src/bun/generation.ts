@@ -186,8 +186,8 @@ export async function generateVideo(
   const headers = {
     Authorization: `Bearer ${args.apiKey}`,
     "Content-Type": "application/json",
-    "HTTP-Referer": "https://github.com/mikecann/mikerosoft",
-    "X-Title": "mikerosoft/video-gen",
+    "HTTP-Referer": "https://github.com/mikecann/video-gen",
+    "X-Title": "video-gen",
   };
 
   const submit = await fetchFn(VIDEO_URL, {

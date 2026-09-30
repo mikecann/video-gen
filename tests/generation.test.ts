@@ -99,9 +99,11 @@ describe("buildGenerateVideosRequest", () => {
 describe("generateVideo", () => {
   it("starts an OpenRouter video job, polls until completed, then downloads the content", async () => {
     const calls: Array<{ url: string; method?: string }> = [];
+    let submitHeaders: Headers | undefined;
     const fetchFn: typeof fetch = async (url, init) => {
       calls.push({ url: String(url), method: init?.method });
       if (String(url).endsWith("/videos")) {
+        submitHeaders = new Headers(init?.headers);
         return Response.json({ id: "job-123", polling_url: "https://openrouter.ai/api/v1/videos/job-123", status: "pending" }, { status: 202 });
       }
       if (String(url).endsWith("/videos/job-123")) {
@@ -133,6 +135,8 @@ describe("generateVideo", () => {
     ]);
     expect(writes[0].path).toBe("C:\\out\\forest.mp4");
     expect(new TextDecoder().decode(writes[0].bytes)).toBe("mp4 bytes");
+    expect(submitHeaders?.get("HTTP-Referer")).toBe("https://github.com/mikecann/video-gen");
+    expect(submitHeaders?.get("X-Title")).toBe("video-gen");
   });
 
   it("reports the OpenRouter job id and each polled status", async () => {

@@ -5,6 +5,8 @@ export default {
     version: "1.0.0",
   },
   build: {
+    // This app uses Bun. Electrobun 2 otherwise defaults to Cottontail.
+    mainProcess: "bun",
     bun: {
       entrypoint: "src/bun/index.ts",
     },
