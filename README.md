@@ -5,10 +5,10 @@ Make short AI videos from a chat window, right from a folder
 Windows · macOS
 
 <!-- media: hero -->
-<!-- ![video-gen](docs/hero.png) -->
-<!-- /media: hero -->
+![Video Gen showing a clip it made from a one-line prompt with Veo 3.1 Fast](docs/result.png)
 
-![video-gen header](docs/header.webp)
+[Watch it run (39 seconds, the wait is cut out)](docs/demo.mp4)
+<!-- /media: hero -->
 
 ## What it is
 
