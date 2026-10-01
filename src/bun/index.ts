@@ -5,6 +5,7 @@ import {
   fetchVideoModels,
   generateVideo,
 } from "./generation.js";
+import { createEventsServer } from "./events.js";
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
@@ -26,69 +27,23 @@ const tempDir = path.join(process.env["TEMP"] ?? "/tmp", "video-gen", sessionId)
 fs.mkdirSync(tempDir, { recursive: true });
 
 const videoStore = new Map<string, { tempPath: string; prompt: string }>();
-const sseClients = new Set<ReadableStreamDefaultController<Uint8Array>>();
-
-function broadcastSse(event: SseEvent) {
-  const bytes = new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
-  for (const ctrl of sseClients) {
-    try {
-      ctrl.enqueue(bytes);
-    } catch {
-      sseClients.delete(ctrl);
+const { server, broadcast: broadcastSse } = createEventsServer<SseEvent>((req) => {
+  const url = new URL(req.url);
+  const match = url.pathname.match(/^\/videos\/([^/]+\.mp4)$/);
+  if (match) {
+    const filePath = path.join(tempDir, match[1]);
+    if (fs.existsSync(filePath)) {
+      return new Response(Bun.file(filePath), {
+        headers: {
+          "Content-Type": "video/mp4",
+          "Access-Control-Allow-Origin": "*",
+          "Accept-Ranges": "bytes",
+        },
+      });
     }
   }
-}
 
-const server = Bun.serve({
-  port: 0,
-  fetch(req) {
-    const url = new URL(req.url);
-
-    if (url.pathname === "/events") {
-      let ctrl: ReadableStreamDefaultController<Uint8Array>;
-      let ping: Timer | undefined;
-      const stream = new ReadableStream<Uint8Array>({
-        start(c) {
-          ctrl = c;
-          sseClients.add(ctrl);
-          ping = setInterval(() => {
-            try {
-              ctrl.enqueue(new TextEncoder().encode(": ping\n\n"));
-            } catch {
-              if (ping) clearInterval(ping);
-            }
-          }, 15_000);
-        },
-        cancel() {
-          sseClients.delete(ctrl);
-          if (ping) clearInterval(ping);
-        },
-      });
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
-    }
-
-    const match = url.pathname.match(/^\/videos\/([^/]+\.mp4)$/);
-    if (match) {
-      const filePath = path.join(tempDir, match[1]);
-      if (fs.existsSync(filePath)) {
-        return new Response(Bun.file(filePath), {
-          headers: {
-            "Content-Type": "video/mp4",
-            "Access-Control-Allow-Origin": "*",
-            "Accept-Ranges": "bytes",
-          },
-        });
-      }
-    }
-
-    return new Response("Not found", { status: 404 });
-  },
+  return new Response("Not found", { status: 404 });
 });
 
 const baseUrl = `http://127.0.0.1:${server.port}`;

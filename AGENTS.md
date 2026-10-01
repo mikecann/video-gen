@@ -36,7 +36,8 @@ through OpenRouter. This clone contains the app, launchers, installers and tests
 ## video-gen specifics
 
 - `src/bun/index.ts` owns the native window, RPC, local video server, saving and
-  logging. `src/bun/generation.ts` talks to OpenRouter's async video endpoints.
+  logging. `src/bun/events.ts` creates that server and its SSE stream.
+  `src/bun/generation.ts` talks to OpenRouter's async video endpoints.
 - `src/shared/modelOptions.ts` describes model capabilities and settings.
   `src/ui/App.tsx` is the chat interface.
 - `.env` belongs in this repo root. `.env.example` lists the required key.
