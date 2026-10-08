@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { networkInterfaces } from "os";
 import { createEventsServer } from "../src/bun/events.js";
 
 // Read an SSE stream into a growing string so tests can wait for text to arrive.
@@ -36,8 +37,37 @@ describe("events server", () => {
 
   it("serves other paths through the fallback", async () => {
     events = createEventsServer(() => new Response("fallback"));
-    const res = await fetch(`http://127.0.0.1:${events.server.port}/videos/x.mp4`);
+    const res = await fetch(events.urlFor("/videos/x.mp4"));
     expect(await res.text()).toBe("fallback");
+  });
+
+  // Without a hostname Bun.serve listens on every interface, so anyone on the
+  // same network could read the session's videos and event stream.
+  it("listens on loopback only", async () => {
+    events = createEventsServer(() => new Response("fallback"));
+    expect(events.server.hostname).toBe("127.0.0.1");
+    const lan = Object.values(networkInterfaces())
+      .flat()
+      .find((i) => i?.family === "IPv4" && !i.internal)?.address;
+    if (lan) {
+      const reached = await fetch(`http://${lan}:${events.server.port}/videos/x.mp4`).then(() => true, () => false);
+      expect(reached).toBe(false);
+    }
+  });
+
+  it("rejects requests without this session's token", async () => {
+    let fallbackCalls = 0;
+    events = createEventsServer(() => {
+      fallbackCalls++;
+      return new Response("fallback");
+    });
+    const base = `http://127.0.0.1:${events.server.port}`;
+    for (const path of ["/events", "/events?token=wrong", "/videos/x.mp4", "/videos/x.mp4?token="]) {
+      const res = await fetch(base + path, { headers: { "Last-Event-ID": "1" } });
+      expect(res.status).toBe(403);
+      await res.body?.cancel();
+    }
+    expect(fallbackCalls).toBe(0);
   });
 
   // Bun.serve closes connections idle for 10 seconds by default, checking every
@@ -45,7 +75,7 @@ describe("events server", () => {
   // used to be lost.
   it("keeps /events open past Bun's idle timeout and still delivers events", async () => {
     events = createEventsServer(() => new Response("Not found", { status: 404 }));
-    const res = await fetch(`http://127.0.0.1:${events.server.port}/events`);
+    const res = await fetch(events.urlFor("/events"));
     expect(res.headers.get("Content-Type")).toBe("text/event-stream");
     const stream = readStream(res);
     cancel = stream.cancel;
@@ -61,7 +91,7 @@ describe("events server", () => {
   // EventSource sends Last-Event-ID when it reconnects, so replay what it missed.
   it("replays events sent while the client was reconnecting", async () => {
     events = createEventsServer(() => new Response("Not found", { status: 404 }));
-    const url = `http://127.0.0.1:${events.server.port}/events`;
+    const url = events.urlFor("/events");
     const first = readStream(await fetch(url));
     events.broadcast({ kind: "generating", jobId: "job-1" });
     expect(await waitFor(() => first.state.text.includes("job-1"), 2_000)).toBe(true);

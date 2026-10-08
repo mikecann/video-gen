@@ -1,6 +1,12 @@
+import { randomUUID } from "crypto";
+
 // HTTP server with an SSE stream at /events, from bun to the webview.
+// Listens on loopback only, and every request must carry this session's token.
+// Other local processes and browser pages can still reach 127.0.0.1, and
+// /events replays recent results to whoever sends a Last-Event-ID.
 export function createEventsServer<E>(fallbackFetch: (req: Request) => Response | Promise<Response>) {
   const encoder = new TextEncoder();
+  const token = randomUUID();
   const clients = new Set<ReadableStreamDefaultController<Uint8Array>>();
   // Recent events, replayed to a client that reconnects with Last-Event-ID.
   const recent: { id: number; bytes: Uint8Array }[] = [];
@@ -21,12 +27,15 @@ export function createEventsServer<E>(fallbackFetch: (req: Request) => Response 
   }
 
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     // Bun closes connections idle for 10s by default, which drops the SSE
     // stream and loses any event sent while the UI reconnects.
     idleTimeout: 0,
     fetch(req) {
-      if (new URL(req.url).pathname !== "/events") return fallbackFetch(req);
+      const url = new URL(req.url);
+      if (url.searchParams.get("token") !== token) return new Response("Forbidden", { status: 403 });
+      if (url.pathname !== "/events") return fallbackFetch(req);
 
       const lastId = Number(req.headers.get("Last-Event-ID") ?? 0);
       let ctrl: ReadableStreamDefaultController<Uint8Array>;
@@ -63,5 +72,11 @@ export function createEventsServer<E>(fallbackFetch: (req: Request) => Response 
     },
   });
 
-  return { server, broadcast };
+  // URLs handed to the webview. EventSource and <video> can't send headers, so
+  // the token goes in the query string.
+  function urlFor(pathname: string) {
+    return `http://127.0.0.1:${server.port}${pathname}?token=${token}`;
+  }
+
+  return { server, broadcast, urlFor };
 }
