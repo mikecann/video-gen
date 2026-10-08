@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { randomUUID } from "crypto";
 import { networkInterfaces } from "os";
 import { createEventsServer } from "../src/bun/events.js";
 
@@ -41,6 +42,13 @@ describe("events server", () => {
     expect(await res.text()).toBe("fallback");
   });
 
+  it("adds the token to paths that already have a query string", async () => {
+    events = createEventsServer((req) => new Response(new URL(req.url).searchParams.get("size")));
+    const res = await fetch(events.urlFor("/videos/x.mp4?size=small"));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("small");
+  });
+
   // Without a hostname Bun.serve listens on every interface, so anyone on the
   // same network could read the session's videos and event stream.
   it("listens on loopback only", async () => {
@@ -50,7 +58,9 @@ describe("events server", () => {
       .flat()
       .find((i) => i?.family === "IPv4" && !i.internal)?.address;
     if (lan) {
-      const reached = await fetch(`http://${lan}:${events.server.port}/videos/x.mp4`).then(() => true, () => false);
+      const reached = await fetch(`http://${lan}:${events.server.port}/videos/x.mp4`, {
+        signal: AbortSignal.timeout(2_000),
+      }).then(() => true, () => false);
       expect(reached).toBe(false);
     }
   });
@@ -62,7 +72,14 @@ describe("events server", () => {
       return new Response("fallback");
     });
     const base = `http://127.0.0.1:${events.server.port}`;
-    for (const path of ["/events", "/events?token=wrong", "/videos/x.mp4", "/videos/x.mp4?token="]) {
+    const paths = [
+      "/events",
+      "/events?token=wrong",
+      `/events?token=${randomUUID()}`,
+      "/videos/x.mp4",
+      "/videos/x.mp4?token=",
+    ];
+    for (const path of paths) {
       const res = await fetch(base + path, { headers: { "Last-Event-ID": "1" } });
       expect(res.status).toBe(403);
       await res.body?.cancel();

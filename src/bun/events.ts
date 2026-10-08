@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID, timingSafeEqual } from "crypto";
 
 // HTTP server with an SSE stream at /events, from bun to the webview.
 // Listens on loopback only, and every request must carry this session's token.
@@ -7,10 +7,16 @@ import { randomUUID } from "crypto";
 export function createEventsServer<E>(fallbackFetch: (req: Request) => Response | Promise<Response>) {
   const encoder = new TextEncoder();
   const token = randomUUID();
+  const tokenBytes = Buffer.from(token);
   const clients = new Set<ReadableStreamDefaultController<Uint8Array>>();
   // Recent events, replayed to a client that reconnects with Last-Event-ID.
   const recent: { id: number; bytes: Uint8Array }[] = [];
   let nextId = 1;
+
+  function hasToken(url: URL) {
+    const given = Buffer.from(url.searchParams.get("token") ?? "");
+    return given.length === tokenBytes.length && timingSafeEqual(given, tokenBytes);
+  }
 
   function broadcast(event: E) {
     const id = nextId++;
@@ -34,7 +40,7 @@ export function createEventsServer<E>(fallbackFetch: (req: Request) => Response 
     idleTimeout: 0,
     fetch(req) {
       const url = new URL(req.url);
-      if (url.searchParams.get("token") !== token) return new Response("Forbidden", { status: 403 });
+      if (!hasToken(url)) return new Response("Forbidden", { status: 403 });
       if (url.pathname !== "/events") return fallbackFetch(req);
 
       const lastId = Number(req.headers.get("Last-Event-ID") ?? 0);
@@ -74,8 +80,10 @@ export function createEventsServer<E>(fallbackFetch: (req: Request) => Response 
 
   // URLs handed to the webview. EventSource and <video> can't send headers, so
   // the token goes in the query string.
-  function urlFor(pathname: string) {
-    return `http://127.0.0.1:${server.port}${pathname}?token=${token}`;
+  function urlFor(path: string) {
+    const url = new URL(path, `http://127.0.0.1:${server.port}`);
+    url.searchParams.set("token", token);
+    return url.href;
   }
 
   return { server, broadcast, urlFor };
