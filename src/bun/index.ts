@@ -27,7 +27,7 @@ const tempDir = path.join(process.env["TEMP"] ?? "/tmp", "video-gen", sessionId)
 fs.mkdirSync(tempDir, { recursive: true });
 
 const videoStore = new Map<string, { tempPath: string; prompt: string }>();
-const { server, broadcast: broadcastSse } = createEventsServer<SseEvent>((req) => {
+const { server, broadcast: broadcastSse, urlFor } = createEventsServer<SseEvent>((req) => {
   const url = new URL(req.url);
   const match = url.pathname.match(/^\/videos\/([^/]+\.mp4)$/);
   if (match) {
@@ -46,8 +46,7 @@ const { server, broadcast: broadcastSse } = createEventsServer<SseEvent>((req) =
   return new Response("Not found", { status: 404 });
 });
 
-const baseUrl = `http://127.0.0.1:${server.port}`;
-log(`video-gen server at ${baseUrl} | apiKey=${apiKey ? "set" : "MISSING"}`);
+log(`video-gen server at http://127.0.0.1:${server.port} | apiKey=${apiKey ? "set" : "MISSING"}`);
 
 function safeFilenamePart(value: string): string {
   const slug = value
@@ -115,7 +114,7 @@ async function runGeneration(params: GenerateParams) {
 
     const video: GeneratedVideo = {
       videoId,
-      serveUrl: `${baseUrl}/videos/${filename}`,
+      serveUrl: urlFor(`/videos/${filename}`),
       tempPath,
       prompt: params.prompt,
     };
@@ -132,7 +131,7 @@ const rpc = BrowserView.defineRPC<VideoGenRPC>({
   maxRequestTime: 15_000,
   handlers: {
     requests: {
-      getConfig: () => ({ workingDir: folderPath, eventsUrl: `${baseUrl}/events` }),
+      getConfig: () => ({ workingDir: folderPath, eventsUrl: urlFor("/events") }),
       getModels: async () => {
         if (!apiKey) return VIDEO_MODELS;
         try {
