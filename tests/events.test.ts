@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "crypto";
+import { createConnection } from "net";
 import { networkInterfaces } from "os";
 import { createEventsServer } from "../src/bun/events.js";
 
@@ -19,6 +20,21 @@ function readStream(res: Response) {
     state.closed = true;
   })();
   return { state, cancel: () => reader.cancel().catch(() => {}) };
+}
+
+// A raw TCP connect rather than fetch. fetch goes through HTTP_PROXY when that's set,
+// and any reply from the proxy would look like the server answered.
+function canConnect(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host, port });
+    const finish = (connected: boolean) => {
+      socket.destroy();
+      resolve(connected);
+    };
+    socket.setTimeout(2_000, () => finish(false));
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+  });
 }
 
 async function waitFor(check: () => boolean, ms: number) {
@@ -54,15 +70,13 @@ describe("events server", () => {
   it("listens on loopback only", async () => {
     events = createEventsServer(() => new Response("fallback"));
     expect(events.server.hostname).toBe("127.0.0.1");
+    const port = events.server.port!;
+    // Proves the probe can connect at all, so a false below means the LAN address was refused.
+    expect(await canConnect("127.0.0.1", port)).toBe(true);
     const lan = Object.values(networkInterfaces())
       .flat()
       .find((i) => i?.family === "IPv4" && !i.internal)?.address;
-    if (lan) {
-      const reached = await fetch(`http://${lan}:${events.server.port}/videos/x.mp4`, {
-        signal: AbortSignal.timeout(2_000),
-      }).then(() => true, () => false);
-      expect(reached).toBe(false);
-    }
+    if (lan) expect(await canConnect(lan, port)).toBe(false);
   });
 
   it("rejects requests without this session's token", async () => {
